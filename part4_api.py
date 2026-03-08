@@ -1,19 +1,4 @@
-"""
-Part 4 – FastAPI Service
-========================
-Startup:
-  uvicorn part4_api:app --host 0.0.0.0 --port 8000
 
-On startup the service loads:
-  - The SentenceTransformer embedding model
-  - FCM centroids (to assign incoming queries to clusters)
-  - The SemanticCache singleton
-
-State is held in-process (single worker).  For multi-worker deployments the
-cache would need to be externalised, but the problem statement explicitly
-forbids Redis/Memcached, so a shared-memory approach (e.g. multiprocessing
-Manager) would be the production path.
-"""
 
 from __future__ import annotations
 
@@ -34,22 +19,21 @@ from part3_cache import SemanticCache
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-# ── global state (loaded once at startup) ─────────────────────────────────────
+# ── global state 
 
 class AppState:
     model:    SentenceTransformer
-    centroids: np.ndarray        # shape (k, 50)  – FCM cluster centres in PCA space
-    pca:      any                # fitted PCA to project queries into same space
+    centroids: np.ndarray        
+    pca:      any                
     cache:    SemanticCache
-    docs:     list[str]          # cleaned corpus (for result retrieval)
+    docs:     list[str]          
     categories: list[str]
 
 
 state = AppState()
 
 
-# ── lifespan ──────────────────────────────────────────────────────────────────
-
+# ── lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load all heavy resources once at startup."""
@@ -61,7 +45,7 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("fcm_centroids.npy not found — run part2_cluster.py first")
     state.centroids = np.load("fcm_centroids.npy")   # (k, 50) in PCA space
 
-    # Refit PCA on the reduced embeddings so we can project queries at runtime
+    
     if not Path("embeddings_reduced.npy").exists():
         raise RuntimeError("embeddings_reduced.npy not found — run part2_cluster.py first")
     emb_full     = np.load("embeddings.npy")          # (N, 384) original
@@ -96,7 +80,7 @@ app = FastAPI(
 )
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── helpers
 
 def embed_query(text: str) -> np.ndarray:
     """Return L2-normalised embedding for a single query string."""
@@ -121,23 +105,22 @@ def soft_cluster_assignment(embedding: np.ndarray) -> tuple[np.ndarray, int]:
 
     Returns (membership_vector, dominant_cluster_id).
     """
-    # Project to same 50-dim PCA space used during FCM training
+    
     embedding_50 = state.pca.transform(embedding.reshape(1, -1))[0]
     centroids = state.centroids   # (k, 50)
-    m = 2.0                       # same fuzziness exponent used in training
-
-    # Euclidean distances to each centroid
+    m = 2.0                       
+    
     diffs = centroids - embedding_50[np.newaxis, :]  # (k, 50)
     dists = np.linalg.norm(diffs, axis=1)            # (k,)
 
-    # Guard against zero distance (query == centroid)
+    
     if np.any(dists == 0.0):
         idx = int(np.argmin(dists))
         u = np.zeros(len(dists))
         u[idx] = 1.0
         return u, idx
 
-    # FCM membership formula  (operates in 50-d PCA space)
+    
     exponent = 2.0 / (m - 1)     # = 2.0 when m=2
     inv_dists = 1.0 / dists       # (k,)
     u = (inv_dists ** exponent) / np.sum(inv_dists ** exponent)
@@ -159,7 +142,7 @@ def retrieve_result(query: str, dominant_cluster: int) -> str:
     if not state.docs:
         return f"[No corpus loaded] Query received: {query}"
 
-    # Load full embedding matrix (would be held in memory in production)
+    
     emb_path = Path("embeddings.npy")
     if not emb_path.exists():
         return f"[embeddings.npy missing] Query: {query}"
@@ -170,7 +153,7 @@ def retrieve_result(query: str, dominant_cluster: int) -> str:
 
     query_emb = embed_query(query)
 
-    # Filter to docs in the same dominant cluster for speed
+    
     if dominant_arr is not None:
         mask = dominant_arr == dominant_cluster
         idx  = np.where(mask)[0]
@@ -192,7 +175,7 @@ def retrieve_result(query: str, dominant_cluster: int) -> str:
     return "\n\n".join(snippets)
 
 
-# ── schemas ───────────────────────────────────────────────────────────────────
+# ── schemas 
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=1000)
@@ -218,7 +201,7 @@ class ThresholdRequest(BaseModel):
     threshold: float = Field(..., gt=0.0, le=1.0)
 
 
-# ── endpoints ─────────────────────────────────────────────────────────────────
+# ── endpoints 
 
 @app.post("/query", response_model=QueryResponse)
 async def query_endpoint(body: QueryRequest):
