@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  newsgroups-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount artefacts produced by part1 & part2 scripts
+      - ./embeddings.npy:/app/embeddings.npy:ro
+      - ./membership_matrix.npy:/app/membership_matrix.npy:ro
+      - ./fcm_centroids.npy:/app/fcm_centroids.npy:ro
+      - ./dominant_clusters.npy:/app/dominant_clusters.npy:ro
+      - ./docs_cleaned.json:/app/docs_cleaned.json:ro
+      - ./categories.json:/app/categories.json:ro
+      - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

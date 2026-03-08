@@ -1,0 +1,10 @@
+@"
+venv/
+__pycache__/
+*.pyc
+*.npy
+chroma_db/
+docs_cleaned.json
+categories.json
+cluster_report.json
+"@ | Out-File -FilePath .gitignore -Encoding utf8
