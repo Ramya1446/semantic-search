@@ -1,28 +1,3 @@
-"""
-Part 2 – Fuzzy Clustering
-=========================
-Algorithm: Fuzzy C-Means (FCM)
-  - Produces a probability distribution over clusters per document,
-    satisfying the "no hard labels" requirement directly.
-  - A document about gun legislation gets e.g. {politics: 0.55, guns: 0.35,
-    law: 0.10} instead of a single label.
-
-Number of clusters: 15  (justified below via FPC curve)
-  - The 20 ground-truth labels conflate semantically close topics
-    (e.g. comp.os.ms-windows.misc & comp.windows.x, talk.religion.misc &
-    soc.religion.christian).  Real semantic clusters are fewer.
-  - We sweep k ∈ {5,8,10,12,15,18,20} and pick the elbow in the
-    Fuzzy Partition Coefficient (FPC) curve.  FPC closer to 1 = crisper
-    clusters; elbow = best trade-off between granularity and coherence.
-  - 15 clusters captures distinct tech/sports/politics/religion/science
-    groupings while keeping inter-cluster distances meaningful.
-
-Cluster validation:
-  - Top-10 nearest docs to each centroid (hard-assignment proxy)
-  - Distribution entropy per cluster (low entropy → crisp; high → boundary)
-  - Boundary documents: docs where top-2 membership scores are within 0.15
-  - t-SNE 2-D projection coloured by dominant cluster
-"""
 
 import json
 import logging
@@ -43,24 +18,21 @@ from tqdm import tqdm
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-# ── config ────────────────────────────────────────────────────────────────────
-N_CLUSTERS   = 15      # chosen via FPC elbow (see sweep below)
-FCM_M        = 2.0     # fuzziness exponent; m=2 is the standard default.
-                       # m→1 → hard k-means; m→∞ → fully uniform memberships.
-                       # m=2 is the most studied value and well-calibrated for
-                       # textual data in 384-d space.
+# ── config 
+N_CLUSTERS   = 15      
+FCM_M        = 2.0     
+                       
 FCM_MAX_ITER = 150
 FCM_ERROR    = 1e-5
 RANDOM_STATE = 42
-BOUNDARY_GAP = 0.15    # max(u) - second_max(u) < this → boundary document
-TOP_N_DOCS   = 8       # representative docs per cluster for display
+BOUNDARY_GAP = 0.15    
+TOP_N_DOCS   = 8       
 
 OUTPUT_DIR = Path("./clustering_output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
+# ── helpers 
 def load_data():
     embeddings  = np.load("embeddings.npy")
     categories  = json.load(open("categories.json"))
@@ -136,17 +108,17 @@ def cluster_analysis(U: np.ndarray, docs: list[str], categories: list[str]) -> d
     dominant_cluster[i] = argmax of row i in U  (used only for visualisation,
     NOT as a hard label in the rest of the system).
     """
-    dominant = U.argmax(axis=1)   # shape (N,)
+    dominant = U.argmax(axis=1)   
     report   = {}
 
     for c in range(N_CLUSTERS):
         members_mask = dominant == c
         member_idx   = np.where(members_mask)[0]
 
-        # membership values for docs whose dominant cluster is c
+        
         memberships  = U[member_idx, c]
 
-        # category distribution within this dominant cluster
+        
         cat_counts: dict[str, int] = {}
         for i in member_idx:
             cat_counts[categories[i]] = cat_counts.get(categories[i], 0) + 1
@@ -193,7 +165,7 @@ def find_boundary_docs(U: np.ndarray, docs: list[str], gap: float = BOUNDARY_GAP
             "gap": float(gaps[i]),
         })
 
-    # Sort by smallest gap first (most uncertain)
+    
     results.sort(key=lambda x: x["gap"])
     log.info(f"Found {len(results):,} boundary documents (gap < {gap})")
     return results
@@ -253,32 +225,32 @@ def print_report(report: dict):
 def main():
     embeddings, categories, docs = load_data()
 
-    # ── Step 0: PCA dimensionality reduction ─────────────────────────────────
-    # Must be done before FCM — see reduce_dims() docstring
+    
+    
     embeddings_reduced = reduce_dims(embeddings, n_components=50)
 
-    # ── Step 1: FPC sweep to justify k=15 ────────────────────────────────────
+    
     fpc_dict = fpc_sweep(embeddings_reduced, ks=[5, 8, 10, 12, 15, 18, 20])
     plot_fpc(fpc_dict)
 
-    # ── Step 2: Fit final FCM ─────────────────────────────────────────────────
+    
     fcm, U = run_fcm(embeddings_reduced)
 
-    # Persist membership matrix and reduced embeddings – used by cache and API
+    
     np.save("membership_matrix.npy", U)
     np.save("embeddings_reduced.npy", embeddings_reduced)
     log.info("Saved membership_matrix.npy  (shape: N × k)")
 
-    # ── Step 3: Analysis ──────────────────────────────────────────────────────
+   
     report, dominant = cluster_analysis(U, docs, categories)
     np.save("dominant_clusters.npy", dominant)
 
-    # Save centroids for query-time cluster assignment
+    
     np.save("fcm_centroids.npy", fcm.centers)
 
     print_report(report)
 
-    # ── Step 4: Boundary documents ────────────────────────────────────────────
+    
     boundary = find_boundary_docs(U, docs)
     print("\n── TOP 5 BOUNDARY / AMBIGUOUS DOCUMENTS ──")
     for b in boundary[:5]:
@@ -287,10 +259,10 @@ def main():
               f"gap={b['gap']:.3f}")
         print(f"  {b['text_preview']!r}\n")
 
-    # ── Step 5: Visualisation ─────────────────────────────────────────────────
+    
     plot_tsne(embeddings, dominant)
 
-    # Save cluster report as JSON for the API to serve
+    
     import json
 
     def make_serialisable(obj):
